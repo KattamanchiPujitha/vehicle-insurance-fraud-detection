@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claim Fraud Checker</title>
+
+  <style>
+    /* ---------- colours (light and dark mode) ---------- */
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --text: #1b1f24;
+      --muted: #5b6470;
+      --line: #dde1e6;
+      --accent: #2a78d6;
+      --low: #1a7f4b;
+      --medium: #a86b00;
+      --high: #c0392b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111418;
+        --card: #1a1f25;
+        --text: #eef0f3;
+        --muted: #a2abb7;
+        --line: #2c333c;
+        --accent: #4a97f0;
+        --low: #46c37f;
+        --medium: #e0a030;
+        --high: #ef6b5d;
+      }
+    }
+
+    /* ---------- page layout ---------- */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 16px 56px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      line-height: 1.5;
+    }
+    .page { max-width: 820px; margin: 0 auto; }
+    h1 { font-size: 1.7rem; margin: 0 0 6px; }
+    .intro { color: var(--muted); margin: 0 0 24px; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    h2 { font-size: 1.05rem; margin: 0 0 16px; }
+    .card + .card h2 { margin-top: 0; }
+
+    /* two columns on a computer, one column on a phone */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; }
+    label { font-weight: 600; font-size: 0.92rem; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-bottom: 4px; }
+    select, input {
+      font: inherit;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 4px;
+      width: 100%;
+    }
+    select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    /* ---------- buttons ---------- */
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
+    button {
+      font: inherit;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 11px 20px;
+      cursor: pointer;
+    }
+    .primary { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+    .primary:disabled { opacity: 0.6; cursor: wait; }
+    .secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); font-weight: 500; padding: 8px 14px; font-size: 0.88rem; }
+    .examples { color: var(--muted); font-size: 0.85rem; margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    /* ---------- result ---------- */
+    #result { display: none; }
+    .score-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .score { font-size: 2.6rem; font-weight: 700; line-height: 1; }
+    .score small { font-size: 1rem; color: var(--muted); font-weight: 500; }
+    .badge {
+      display: inline-block;
+      font-weight: 700;
+      font-size: 0.9rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 2px solid currentColor;
+    }
+    .Low { color: var(--low); }
+    .Medium { color: var(--medium); }
+    .High { color: var(--high); }
+
+    /* the bar from 0 to 100, with a mark at the threshold */
+    .meter { position: relative; height: 12px; background: var(--line); border-radius: 6px; margin: 20px 0 6px; }
+    .meter .fill { height: 100%; border-radius: 6px; background: currentColor; transition: width 0.5s; }
+    .meter .mark { position: absolute; top: -5px; width: 2px; height: 22px; background: var(--text); }
+    .meter-labels { position: relative; height: 18px; font-size: 0.78rem; color: var(--muted); }
+    .meter-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+    .note { color: var(--muted); font-size: 0.85rem; margin: 14px 0 0; }
+    #error { display: none; color: var(--high); font-weight: 600; margin-top: 14px; }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <h1>Insurance Claim Fraud Checker</h1>
+    <p class="intro">Enter the 12 details of a vehicle insurance claim. The model gives a fraud risk score from 0 to 100 to help decide which claims to investigate first.</p>
+
+    <form id="claim-form">
+
+      <!-- first group of inputs -->
+      <div class="card">
+        <h2>Policy details</h2>
+        <div class="grid">
+      <div class="field">
+        <label for="PolicyType">Policy type</label>
+        <span class="hint">Vehicle type and what the policy covers</span>
+        <select id="PolicyType" name="PolicyType" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="Sedan - All Perils">Sedan - All Perils</option>
+          <option value="Sedan - Collision">Sedan - Collision</option>
+          <option value="Sedan - Liability">Sedan - Liability</option>
+          <option value="Sport - All Perils">Sport - All Perils</option>
+          <option value="Sport - Collision">Sport - Collision</option>
+          <option value="Sport - Liability">Sport - Liability</option>
+          <option value="Utility - All Perils">Utility - All Perils</option>
+          <option value="Utility - Collision">Utility - Collision</option>
+          <option value="Utility - Liability">Utility - Liability</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="AddressChange_Claim">Address change</label>
+        <span class="hint">How long before the claim the address changed</span>
+        <select id="AddressChange_Claim" name="AddressChange_Claim" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="no change">No change</option>
+          <option value="under 6 months">Under 6 months</option>
+          <option value="1 year">1 year</option>
+          <option value="2 to 3 years">2 to 3 years</option>
+          <option value="4 to 8 years">4 to 8 years</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="Deductible">Deductible</label>
+        <span class="hint">Amount the customer pays first (in $)</span>
+        <select id="Deductible" name="Deductible" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="300">$300</option>
+          <option value="400">$400</option>
+          <option value="500">$500</option>
+          <option value="700">$700</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="VehiclePrice">Vehicle price</label>
+        <span class="hint">Price range of the vehicle</span>
+        <select id="VehiclePrice" name="VehiclePrice" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="less than 20000">Less than $20,000</option>
+          <option value="20000 to 29000">$20,000 to $29,000</option>
+          <option value="30000 to 39000">$30,000 to $39,000</option>
+          <option value="40000 to 59000">$40,000 to $59,000</option>
+          <option value="60000 to 69000">$60,000 to $69,000</option>
+          <option value="more than 69000">More than $69,000</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="PastNumberOfClaims">Past number of claims</label>
+        <span class="hint">Claims made earlier by this customer</span>
+        <select id="PastNumberOfClaims" name="PastNumberOfClaims" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="none">None</option>
+          <option value="1">1</option>
+          <option value="2 to 4">2 to 4</option>
+          <option value="more than 4">More than 4</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="Make">Vehicle make</label>
+        <span class="hint">Car brand</span>
+        <select id="Make" name="Make" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="Accura">Acura</option>
+          <option value="BMW">BMW</option>
+          <option value="Chevrolet">Chevrolet</option>
+          <option value="Dodge">Dodge</option>
+          <option value="Ferrari">Ferrari</option>
+          <option value="Ford">Ford</option>
+          <option value="Honda">Honda</option>
+          <option value="Jaguar">Jaguar</option>
+          <option value="Lexus">Lexus</option>
+          <option value="Mazda">Mazda</option>
+          <option value="Mecedes">Mercedes</option>
+          <option value="Mercury">Mercury</option>
+          <option value="Nisson">Nissan</option>
+          <option value="Pontiac">Pontiac</option>
+          <option value="Porche">Porsche</option>
+          <option value="Saab">Saab</option>
+          <option value="Saturn">Saturn</option>
+          <option value="Toyota">Toyota</option>
+          <option value="VW">VW</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="Age">Policy holder age</label>
+        <span class="hint">Between 16 and 80</span>
+        <input type="number" id="Age" name="Age" min="16" max="80" step="1" placeholder="e.g. 35" required>
+      </div>
+      <div class="field">
+        <label for="NumberOfSuppliments">Number of supplements</label>
+        <span class="hint">Extra additions made to the original claim</span>
+        <select id="NumberOfSuppliments" name="NumberOfSuppliments" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="none">None</option>
+          <option value="1 to 2">1 to 2</option>
+          <option value="3 to 5">3 to 5</option>
+          <option value="more than 5">More than 5</option>
+        </select>
+      </div>
+        </div>
+      </div>
+
+      <!-- second group of inputs -->
+      <div class="card">
+        <h2>Accident and claim details</h2>
+        <div class="grid">
+      <div class="field">
+        <label for="Fault">Who was at fault?</label>
+        <span class="hint">The person who caused the accident</span>
+        <select id="Fault" name="Fault" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="Policy Holder">Policy Holder</option>
+          <option value="Third Party">Third Party</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="MonthClaimed">Month claim was filed</label>
+        
+        <select id="MonthClaimed" name="MonthClaimed" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="Jan">January</option>
+          <option value="Feb">February</option>
+          <option value="Mar">March</option>
+          <option value="Apr">April</option>
+          <option value="May">May</option>
+          <option value="Jun">June</option>
+          <option value="Jul">July</option>
+          <option value="Aug">August</option>
+          <option value="Sep">September</option>
+          <option value="Oct">October</option>
+          <option value="Nov">November</option>
+          <option value="Dec">December</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="Month">Month of accident</label>
+        
+        <select id="Month" name="Month" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="Jan">January</option>
+          <option value="Feb">February</option>
+          <option value="Mar">March</option>
+          <option value="Apr">April</option>
+          <option value="May">May</option>
+          <option value="Jun">June</option>
+          <option value="Jul">July</option>
+          <option value="Aug">August</option>
+          <option value="Sep">September</option>
+          <option value="Oct">October</option>
+          <option value="Nov">November</option>
+          <option value="Dec">December</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="AccidentArea">Accident area</label>
+        <span class="hint">Where the accident happened</span>
+        <select id="AccidentArea" name="AccidentArea" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="Rural">Rural</option>
+          <option value="Urban">Urban</option>
+        </select>
+      </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="submit-btn" class="primary">Check claim</button>
+          <div class="examples">
+            Try an example:
+            <button type="button" class="secondary" data-example="high">High-risk claim</button>
+            <button type="button" class="secondary" data-example="low">Low-risk claim</button>
+          </div>
+        </div>
+        <div id="error"></div>
+      </div>
+    </form>
+
+    <!-- the answer from the model is shown here -->
+    <div class="card" id="result" aria-live="polite">
+      <h2>Result</h2>
+      <div id="result-body">
+        <div class="score-row">
+          <div class="score"><span id="score-number">0</span> <small>/ 100</small></div>
+          <span class="badge" id="badge"></span>
+        </div>
+        <div class="meter">
+          <div class="fill" id="fill"></div>
+          <div class="mark" id="mark"></div>
+        </div>
+        <div class="meter-labels"><span style="left:0%">0</span><span id="mark-label"></span><span style="left:100%">100</span></div>
+        <p class="note" id="message"></p>
+        <p class="note">The score ranks claims by how suspicious they look. It is not a percentage chance and it is not proof of fraud: a person must make the final decision.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // example claims for the two buttons
+    const examples = {
+      "high": {
+            "PolicyType": "Sport - Collision",
+            "Fault": "Policy Holder",
+            "AddressChange_Claim": "2 to 3 years",
+            "Deductible": 500,
+            "VehiclePrice": "less than 20000",
+            "PastNumberOfClaims": "none",
+            "Make": "Accura",
+            "MonthClaimed": "Mar",
+            "Age": 23,
+            "Month": "Mar",
+            "AccidentArea": "Urban",
+            "NumberOfSuppliments": "none"
+      },
+      "low": {
+            "PolicyType": "Sedan - Liability",
+            "Fault": "Third Party",
+            "AddressChange_Claim": "no change",
+            "Deductible": 400,
+            "VehiclePrice": "30000 to 39000",
+            "PastNumberOfClaims": "more than 4",
+            "Make": "Mazda",
+            "MonthClaimed": "Mar",
+            "Age": 45,
+            "Month": "Mar",
+            "AccidentArea": "Urban",
+            "NumberOfSuppliments": "none"
+      }
+};
+
+    const form = document.getElementById("claim-form");
+    const errorBox = document.getElementById("error");
+    const resultCard = document.getElementById("result");
+
+    // ---- fill the form with an example claim ----
+    document.querySelectorAll("[data-example]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const values = examples[button.dataset.example];
+        for (const name in values) {
+          document.getElementById(name).value = values[name];
+        }
+      });
+    });
+
+    // ---- when "Check claim" is clicked ----
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();                       // do not reload the page
+      errorBox.style.display = "none";
+
+      // 1. read the 12 values from the form
+      const data = {};
+      new FormData(form).forEach(function (value, name) { data[name] = value; });
+      data.Age = Number(data.Age);                  // these two must be numbers
+      data.Deductible = Number(data.Deductible);
+
+      // 2. send them to the API and wait for the answer
+      const button = document.getElementById("submit-btn");
+      button.disabled = true;
+      button.textContent = "Checking...";
+      try {
+        const response = await fetch("/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        });
+        if (!response.ok) { throw new Error("The API returned an error (" + response.status + ")."); }
+        showResult(await response.json());
+      } catch (error) {
+        errorBox.textContent = "Could not get a result. Is the server running? " + error.message;
+        errorBox.style.display = "block";
+      }
+      button.disabled = false;
+      button.textContent = "Check claim";
+    });
+
+    // ---- show the answer on the page ----
+    function showResult(r) {
+      const messages = {
+        High: "High risk: send this claim for investigation.",
+        Medium: "Medium risk: the claim looks a little unusual, take a closer look.",
+        Low: "Low risk: nothing unusual found."
+      };
+      document.getElementById("score-number").textContent = r.risk_score;
+
+      const badge = document.getElementById("badge");
+      badge.textContent = r.risk_level.toUpperCase() + " RISK";
+      badge.className = "badge " + r.risk_level;
+      document.querySelector(".meter").className = "meter " + r.risk_level;
+
+      document.getElementById("fill").style.width = r.risk_score + "%";
+      document.getElementById("mark").style.left = r.threshold + "%";
+      const markLabel = document.getElementById("mark-label");
+      markLabel.textContent = "flag at " + r.threshold;
+      markLabel.style.left = r.threshold + "%";
+
+      document.getElementById("message").textContent = messages[r.risk_level];
+      resultCard.style.display = "block";
+      resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  </script>
+</body>
+</html>
